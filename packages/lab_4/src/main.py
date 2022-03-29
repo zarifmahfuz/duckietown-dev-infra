@@ -6,7 +6,7 @@ import os
 import rospy
 
 import numpy as np
-import cv2 
+import cv2, cv_bridge
 
 from duckietown.dtros import DTROS, NodeType
 from duckietown_msgs.msg import Twist2DStamped
@@ -154,7 +154,7 @@ class LineFollower(DTROS):
                 cx = self.yellow_line_centroid["cx"]
                 cy = self.yellow_line_centroid["cy"]
                 error_x = cx - self.img_width/2
-                message.omega = -error_x / 25           # was 100 orgiinally
+                message.omega = -error_x / 35           # was 100 orgiinally
             else:
                 message.omega = 0
         except KeyError:
