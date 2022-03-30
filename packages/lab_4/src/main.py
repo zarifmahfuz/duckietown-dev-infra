@@ -24,19 +24,12 @@ class LineFollower(DTROS):
         self.imager = rospy.Subscriber(f'/{robot_name}/camera_node/image/compressed', CompressedImage, 
                     self.img_callback, queue_size=1)
         self.mover = rospy.Publisher(f'/{robot_name}/car_cmd_switch_node/cmd', Twist2DStamped, queue_size=10)
-        # self.low_yellow = np.array([24,150,150], dtype=np.uint8)
-        # self.high_yellow = np.array([50,255,255], dtype=np.uint8)
-        # self.low_red = np.array([0, 0, 0], dtype=np.uint8)
-        # self.high_red = np.array([255, 255, 255], dtype=np.uint8)
 
         self.low_red = np.array([150, 50, 50], dtype=np.uint8)
         self.high_red = np.array([255, 255, 255], dtype=np.uint8)
-        # [344, 25, 40]
-        # [354, 83, 40]
-        # [138, 75, 0], [179, 255, 255]
 
-        self.low_yellow = np.array([11,11,64], dtype=np.uint8)
-        self.high_yellow = np.array([50,255,255], dtype=np.uint8)
+        self.low_yellow = np.array([11,80,80], dtype=np.uint8) # 11 64
+        self.high_yellow = np.array([50,255,255], dtype=np.uint8) # 255 255
         
         self.yellow_line_centroid = {}
         self.stop_sign_detected = False
@@ -150,7 +143,8 @@ class LineFollower(DTROS):
             # crop the image
             height, width, channels = self.decoded_raw_img.shape
             self.img_width = width
-            crop_img_dft = self.decoded_raw_img[int(height/2):][0:width]
+            adjuster = 10
+            crop_img_dft = self.decoded_raw_img[int(height/2 + adjuster*9):][0:width]
 
             # convert to hsv
             hsv_dft = cv2.cvtColor(crop_img_dft, cv2.COLOR_BGR2HSV)
@@ -159,17 +153,40 @@ class LineFollower(DTROS):
             mask_yellow = cv2.inRange(hsv_dft, self.low_yellow, self.high_yellow)
             mask_red = cv2.inRange(hsv_dft, self.low_red, self.high_red)
 
+            ret,thresh = cv2.threshold(mask_yellow, 40, 255, 0)
+            contours, _ =cv2.findContours(thresh, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_L1) #ccomp
+
             res_yellow = cv2.bitwise_and(crop_img_dft, crop_img_dft, mask = mask_yellow)
-            # res_red = cv2.bitwise_and(crop_img_dft, crop_img_dft, mask = mask_red)
 
             img = CompressedImage()
             img.header.stamp = rospy.Time.now()
             img.format = "jpeg"
-            img.data = np.array(cv2.imencode('.jpg', res_yellow)[1]).tostring()
 
-            M_yellow = cv2.moments(mask_yellow, False)
+            centres = []
+            # go through contours, put centre data on a separate array
+            for i in range(len(contours)):
+                if (cv2.contourArea(contours[i]) < 1500 ):
+                    continue
+
+                m = cv2.moments(contours[i])
+                try:
+                    centres.append((int(m['m10']/m['m00']), int(m['m01']/m['m00']) ) )
+                    cv2.circle(res_yellow, centres[-1], 10, (0,0,255), -1)
+                except ZeroDivisionError:
+                    pass
+
+            centres.sort(key=lambda cnd: cnd[1]) # order by y coordinate
+            
+            try:
+                self.yellow_line_detected = True
+                self.yellow_line_centroid["cx"] = centres[-1][0]
+                self.yellow_line_centroid["cy"] = centres[-1][1]
+            except Exception as e:
+                self.yellow_line_detected = False
+                self.yellow_line_centroid["cx"] = height/2
+                self.yellow_line_centroid["cy"] = width/2
+            
             M_red = cv2.moments(mask_red)
-
             # do we see red?
             if M_red["m00"] > 0:
                 if self.red_line_detected is False:
@@ -195,20 +212,11 @@ class LineFollower(DTROS):
             else:
                 self.red_line_detected = False
 
-            try:
-                self.yellow_line_detected = True
-                self.yellow_line_centroid["cx"] = M_yellow["m10"]/M_yellow["m00"]
-                self.yellow_line_centroid["cy"] = M_yellow["m01"]/M_yellow["m00"]
-                # print("got yellow")
-            except ZeroDivisionError:
-                self.yellow_line_detected = False
-                self.yellow_line_centroid["cx"] = height/2
-                self.yellow_line_centroid["cy"] = width/2
-
+            img.data = np.array(cv2.imencode('.jpg', res_yellow)[1]).tostring()
             # self.im_pub.publish(img)
 
     def move_based_on_camera(self):
-        linear_speed = 0.08
+        linear_speed = 0.2
         message = Twist2DStamped()
         message.v = linear_speed
         self.process_img()
@@ -225,7 +233,8 @@ class LineFollower(DTROS):
                 cx = self.yellow_line_centroid["cx"]
                 cy = self.yellow_line_centroid["cy"]
                 error_x = cx - self.img_width/2
-                message.omega = -error_x / 25           # was 100 orgiinally
+                message.omega = -error_x / 50 
+                # rospy.loginfo(-error_x / 50) # 30 for paola
             else:
                 message.omega = 0
         except KeyError:
@@ -238,7 +247,7 @@ class LineFollower(DTROS):
         rospy.loginfo("Start moving!")
         while (self.end_program is False and not rospy.is_shutdown()):
             self.move_based_on_camera()
-            # self.process_img()
+            
         # make sure that it stops!
         for i in range(0, 100):
             self.stop()
