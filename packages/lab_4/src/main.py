@@ -6,7 +6,7 @@ import os
 import rospy
 
 import numpy as np
-import cv2 
+import cv2, cv_bridge
 
 from duckietown.dtros import DTROS, NodeType
 from duckietown_msgs.msg import Twist2DStamped
