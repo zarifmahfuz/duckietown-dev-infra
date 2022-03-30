@@ -25,8 +25,14 @@ class LineFollower(DTROS):
                     self.img_callback, queue_size=1)
         self.mover = rospy.Publisher(f'/{robot_name}/car_cmd_switch_node/cmd', Twist2DStamped, queue_size=10)
 
-        self.low_red = np.array([150, 50, 50], dtype=np.uint8)
-        self.high_red = np.array([255, 255, 255], dtype=np.uint8)
+        # self.low_red = np.array([148, 86, 92], dtype=np.uint8) #51  79
+        # self.high_red = np.array([179, 95, 100], dtype=np.uint8) # 255 # 255
+
+        self.low_red = np.array([11, 11, 64], dtype=np.uint8) #51  79 #np.array([148, 86, 92], dtype=np.uint8) #51  79
+        self.high_red = np.array([50, 255, 255], dtype=np.uint8) #51  79 #np.array([179, 95, 100], dtype=np.uint8) # 255 # 255
+
+        self.low_stop_red = np.array([0 , 120, 120], dtype=np.uint8)
+        self.high_stop_red = np.array([10, 255, 255], dtype=np.uint8)
 
         self.low_yellow = np.array([11,80,80], dtype=np.uint8) # 11 64
         self.high_yellow = np.array([50,255,255], dtype=np.uint8) # 255 255
@@ -104,10 +110,26 @@ class LineFollower(DTROS):
         # reference: https://stackoverflow.com/questions/62581171/how-to-implement-kaze-and-a-kaze-using-python-and-opencv
         stop_img_raw = cv2.imread(img_path)
         hsv = cv2.cvtColor(stop_img_raw, cv2.COLOR_BGR2HSV)
+        # rospy.loginfo(f'hsv bud: {hsv}')
+
         mask_red = cv2.inRange(hsv, self.low_red, self.high_red)
+
+        # # DEBUG
+        # img = CompressedImage()
+        # img.header.stamp = rospy.Time.now()
+        # img.format = "jpeg"
+        # img.data = np.array(cv2.imencode('.jpg', mask_red)[1]).tostring()
+        
+        # while True:
+        #     rospy.loginfo("yo")
+        #     self.im_pub.publish(img)
+            
+        rospy.loginfo(f'mask_red: {mask_red}')
 
         self.stop_base_keypoints, self.stop_base_descriptors = self.AKAZE.detectAndCompute(mask_red, None)
         self.stop_base_descriptors = np.float32(self.stop_base_descriptors)
+
+        rospy.loginfo(f'Init Base Descriptors: {self.stop_base_descriptors}')
 
         # initialize FLANN algorithm
         FLANN_INDEX_KDTREE = 1
@@ -121,7 +143,16 @@ class LineFollower(DTROS):
         candidate_keypoints, candidate_descriptors = self.AKAZE.detectAndCompute(masked_img, None)
         candidate_descriptors = np.float32(candidate_descriptors)
 
-        matches = self.FLANN.knnMatch(self.stop_base_descriptors, candidate_descriptors, 2)
+        # rospy.loginfo(f'Base descriptor: {self.stop_base_descriptors}')
+        # rospy.loginfo(f'Candidate descriptors: {candidate_descriptors}')
+
+        if candidate_descriptors is None:
+            return False
+
+        try:
+            matches = self.FLANN.knnMatch(self.stop_base_descriptors, candidate_descriptors, 2)
+        except (cv2.error, ValueError):
+            return False
 
         # Lowe's ratio test
         ratio_thresh = 0.7
@@ -132,7 +163,8 @@ class LineFollower(DTROS):
             if m.distance < ratio_thresh * n.distance:
                 good_matches.append(m)
 
-        target_matches = 40
+        target_matches = 500    # 40
+        rospy.loginfo(f'Good matches: {len(good_matches)}')
         if (len(good_matches) > target_matches):
             rospy.loginfo("STOP SIGN DETECTED!")
             return True
@@ -188,7 +220,8 @@ class LineFollower(DTROS):
             
             M_red = cv2.moments(mask_red)
             # do we see red?
-            if M_red["m00"] > 0:
+            # rospy.loginfo("Checking red?")
+            if M_red["m00"] > 0 or True:
                 if self.red_line_detected is False:
                     rospy.loginfo("Red detected")
                     self.red_line_detected = True
@@ -205,7 +238,7 @@ class LineFollower(DTROS):
                         self.stop_sign_detected = True
                         rospy.loginfo("Stop sign detected. Stop")
 
-                rospy.loginfo("Publishing res_stop")
+                rospy.loginfo(".")
                 img.data = np.array(cv2.imencode('.jpg', res_stop)[1]).tostring()
                 self.im_pub.publish(img)
                 return
@@ -214,6 +247,8 @@ class LineFollower(DTROS):
 
             img.data = np.array(cv2.imencode('.jpg', res_yellow)[1]).tostring()
             # self.im_pub.publish(img)
+        else:
+            rospy.loginfo("Decoded image is None")
 
     def move_based_on_camera(self):
         linear_speed = 0.2
@@ -243,18 +278,20 @@ class LineFollower(DTROS):
         self.mover.publish(message)
 
     def run(self):
-        rospy.sleep(10)
+        rospy.sleep(5)
         rospy.loginfo("Start moving!")
         while (self.end_program is False and not rospy.is_shutdown()):
-            self.move_based_on_camera()
+            # self.move_based_on_camera()
+            self.process_img()
             
+        rospy.loginfo("Done!")
         # make sure that it stops!
         for i in range(0, 100):
             self.stop()
 
 
 def main():
-    stop_sign_img_path = os.path.dirname(os.path.realpath(__file__)) + "/stop_sign_1.png"
+    stop_sign_img_path = os.path.dirname(os.path.realpath(__file__)) + "/stop_qr.jpg"
 
     node = LineFollower(node_name="mrrobot22918", robot_name="mrrobot22918",
                         stop_sign_img_path=stop_sign_img_path)
