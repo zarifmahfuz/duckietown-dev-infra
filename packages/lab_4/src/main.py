@@ -140,7 +140,6 @@ class LineFollower(DTROS):
                 try:
                     centres.append((int(m['m10']/m['m00']), int(m['m01']/m['m00']) ) )
                     cv2.circle(res_yellow, centres[-1], 10, (0,0,255), -1)
-                    rospy.loginfo(cv2.contourArea(contours[i]))
                 except ZeroDivisionError:
                     pass
 
