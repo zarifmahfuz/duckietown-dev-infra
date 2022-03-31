@@ -28,11 +28,11 @@ class LineFollower(DTROS):
         # self.low_red = np.array([148, 86, 92], dtype=np.uint8) #51  79
         # self.high_red = np.array([179, 95, 100], dtype=np.uint8) # 255 # 255
 
-        self.low_red = np.array([11, 11, 64], dtype=np.uint8) #51  79 #np.array([148, 86, 92], dtype=np.uint8) #51  79
-        self.high_red = np.array([50, 255, 255], dtype=np.uint8) #51  79 #np.array([179, 95, 100], dtype=np.uint8) # 255 # 255
+        self.low_red = np.array([140, 40, 40], dtype=np.uint8) #51  79 #np.array([148, 86, 92], dtype=np.uint8) #51  79
+        self.high_red = np.array([255, 255, 200], dtype=np.uint8) #51  79 #np.array([179, 95, 100], dtype=np.uint8) # 255 # 255
 
-        self.low_stop_red = np.array([0 , 120, 120], dtype=np.uint8)
-        self.high_stop_red = np.array([10, 255, 255], dtype=np.uint8)
+        self.low_stop_red = np.array([11, 11, 64], dtype=np.uint8)
+        self.high_stop_red = np.array([50, 255, 255], dtype=np.uint8)
 
         self.low_yellow = np.array([11,80,80], dtype=np.uint8) # 11 64
         self.high_yellow = np.array([50,255,255], dtype=np.uint8) # 255 255
@@ -48,6 +48,8 @@ class LineFollower(DTROS):
         self.red_line_detected = False
         self.AKAZE = cv2.AKAZE_create()
         self.define_stop_sign_input_desc(stop_sign_img_path)
+
+        self.counter = 0
 
         self.end_program = False
 
@@ -112,7 +114,7 @@ class LineFollower(DTROS):
         hsv = cv2.cvtColor(stop_img_raw, cv2.COLOR_BGR2HSV)
         # rospy.loginfo(f'hsv bud: {hsv}')
 
-        mask_red = cv2.inRange(hsv, self.low_red, self.high_red)
+        mask_red = cv2.inRange(hsv, self.low_stop_red, self.high_stop_red)
 
         # # DEBUG
         # img = CompressedImage()
@@ -163,10 +165,10 @@ class LineFollower(DTROS):
             if m.distance < ratio_thresh * n.distance:
                 good_matches.append(m)
 
-        target_matches = 500    # 40
+        target_matches = 0    # 40
         rospy.loginfo(f'Good matches: {len(good_matches)}')
         if (len(good_matches) > target_matches):
-            rospy.loginfo("STOP SIGN DETECTED!")
+            rospy.loginfo("detected!")
             return True
         return False
 
@@ -185,8 +187,17 @@ class LineFollower(DTROS):
             mask_yellow = cv2.inRange(hsv_dft, self.low_yellow, self.high_yellow)
             mask_red = cv2.inRange(hsv_dft, self.low_red, self.high_red)
 
+            # try to extract the stop image
+            stop_img_crop = self.decoded_raw_img[0:int(height/2)][0:width]
+            hsv_stop = cv2.cvtColor(stop_img_crop, cv2.COLOR_BGR2HSV)
+            mask_stop = cv2.inRange(hsv_stop, self.low_red, self.high_red)
+
             ret,thresh = cv2.threshold(mask_yellow, 40, 255, 0)
             contours, _ =cv2.findContours(thresh, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_L1) #ccomp
+
+            red_ret,red_thresh = cv2.threshold(mask_stop, 40, 255, 0)
+            red_contours, _ =cv2.findContours(red_thresh, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_L1) #ccomp
+            
 
             res_yellow = cv2.bitwise_and(crop_img_dft, crop_img_dft, mask = mask_yellow)
 
@@ -218,27 +229,47 @@ class LineFollower(DTROS):
                 self.yellow_line_centroid["cx"] = height/2
                 self.yellow_line_centroid["cy"] = width/2
             
-            M_red = cv2.moments(mask_red)
+
+            # M_red = cv2.moments(mask_red)
             # do we see red?
             # rospy.loginfo("Checking red?")
-            if M_red["m00"] > 0 or True:
+            # if M_red["m00"] > 0 or True:
+            if True:
                 if self.red_line_detected is False:
                     rospy.loginfo("Red detected")
                     self.red_line_detected = True
 
-                # try to extract the stop image
-                stop_img_crop = self.decoded_raw_img[0:int(height/2)][0:width]
-                hsv_stop = cv2.cvtColor(stop_img_crop, cv2.COLOR_BGR2HSV)
-                mask_stop = cv2.inRange(hsv_stop, self.low_red, self.high_red)
+                # mask_stop = cv2.inRange(hsv_stop, self.low_red, self.high_red)
                 res_stop = cv2.bitwise_and(stop_img_crop, stop_img_crop, mask=mask_stop)
 
+                red_centres = []
+                for i in range(len(red_contours)):
+                    # cv2.drawContours(res_stop, red_contours, i, (0, 255, 0), 2)
+                    
+                    approx = cv2.approxPolyDP(red_contours[i], 0.01 * cv2.arcLength(red_contours[i], True), True)
+                    if not cv2.isContourConvex(approx):
+                        continue
+
+                    # rospy.loginfo(f"{cv2.contourArea(red_contours[i])}")
+
+                    if (cv2.contourArea(red_contours[i]) < 670 ):
+                        continue
+
+                    cv2.drawContours(res_stop, red_contours, i, (0, 255, 0), 2)
+                    self.stop_sign_detected = True
+                    rospy.loginfo(f"OVER 900: {cv2.contourArea(red_contours[i])}")
+                    red_centres.append(cv2.contourArea(red_contours[i]))
+
+
                 # run feature matching
-                if self.stop_sign_detected is False:
-                    if (self.match_stop_sign(mask_stop) is True):
+                self.counter+=1
+                if self.stop_sign_detected is False and self.counter%3 == 0:
+                    rospy.loginfo(len(red_centres) > 0)
+
+                    if (self.match_stop_sign(mask_stop) is True and len(red_centres) > 0 ):
                         self.stop_sign_detected = True
                         rospy.loginfo("Stop sign detected. Stop")
 
-                rospy.loginfo(".")
                 img.data = np.array(cv2.imencode('.jpg', res_stop)[1]).tostring()
                 self.im_pub.publish(img)
                 return
@@ -251,7 +282,7 @@ class LineFollower(DTROS):
             rospy.loginfo("Decoded image is None")
 
     def move_based_on_camera(self):
-        linear_speed = 0.2
+        linear_speed = 0.15
         message = Twist2DStamped()
         message.v = linear_speed
         self.process_img()
@@ -268,8 +299,8 @@ class LineFollower(DTROS):
                 cx = self.yellow_line_centroid["cx"]
                 cy = self.yellow_line_centroid["cy"]
                 error_x = cx - self.img_width/2
-                message.omega = -error_x / 50 
-                # rospy.loginfo(-error_x / 50) # 30 for paola
+                message.omega = -error_x / 80 
+                rospy.loginfo(-error_x / 80) # 30 for paola
             else:
                 message.omega = 0
         except KeyError:
@@ -281,8 +312,8 @@ class LineFollower(DTROS):
         rospy.sleep(5)
         rospy.loginfo("Start moving!")
         while (self.end_program is False and not rospy.is_shutdown()):
-            # self.move_based_on_camera()
-            self.process_img()
+            self.move_based_on_camera()
+            # self.process_img()
             
         rospy.loginfo("Done!")
         # make sure that it stops!
