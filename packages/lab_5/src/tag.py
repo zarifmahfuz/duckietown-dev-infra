@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 '''
 Adapted from: https://raceon.io/localization/
@@ -42,4 +43,12 @@ class Tag():
         return np.array([[x],[y],[z]])
 
     def estimate_pose(self, tag_id, R, t):
-        raise NotImplementedError
+        camera_R = np.transpose(R)
+        camera_t = -1 * t
+        camera_pos = np.matmul(camera_R, camera_t)
+
+        global_pos = np.add(np.matmul(self.orientations[tag_id], camera_pos), self.locations[tag_id])
+
+        r = Rotation.from_matrix(np.matmul(self.orientations[tag_id], camera_R))
+
+        return global_pos, r.as_euler('zyz', degrees=True)

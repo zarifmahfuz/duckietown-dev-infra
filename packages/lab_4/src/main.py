@@ -12,7 +12,7 @@ from duckietown.dtros import DTROS, NodeType
 from duckietown_msgs.msg import Twist2DStamped
 
 # cv bridge can't handle compressed img
-from sensor_msgs.msg import CompressedImage
+
 
 class LineFollower(DTROS):
     def __init__(self, node_name, robot_name, stop_sign_img_path):

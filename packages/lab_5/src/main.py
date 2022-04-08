@@ -22,6 +22,7 @@ class MyNode(DTROS):
      
         # TODO: add your subsribers or publishers here
         self.decoded_raw_img = None
+        self.gray_img = None
         self.undistorted_image = None
         self.imager = rospy.Subscriber(f'/{robot_name}/camera_node/image/compressed', CompressedImage, 
                       self.img_callback, queue_size=1)
@@ -35,10 +36,11 @@ class MyNode(DTROS):
         # Add information about tag locations
         # Function Arguments are id, x, y, z, theta_x, theta_y, theta_z (euler) 
         # for example, self.tags.add_tag( ... 
-        self.tags.add_tag(id=0, x=0, y=0, z=0.3048, theta_x=0, theta_y=0, theta_z=0)
-        self.tags.add_tag(id=1, x=0.3048, y=0, z=0.6096, theta_x=0, theta_y=-math.pi / 2, theta_z=0)
-        self.tags.add_tag(id=2, x=0.6096, y=0, z=0.3048, theta_x=0, theta_y=-math.pi, theta_z=0)
-        self.tags.add_tag(id=3, x=0.3048, y=0, z=0, theta_x=0, theta_y=math.pi / 2, theta_z=0)
+        # [-pi, pi]
+        self.tags.add_tag(id=0, x=0, y=0, z=0.3048, theta_x=0, theta_y=math.pi / 2, theta_z=0)
+        self.tags.add_tag(id=1, x=0.3048, y=0, z=0.6096, theta_x=0, theta_y=0, theta_z=0)
+        self.tags.add_tag(id=2, x=0.6096, y=0, z=0.3048, theta_x=0, theta_y=3 * math.pi / 2, theta_z=0)
+        self.tags.add_tag(id=3, x=0.3048, y=0, z=0, theta_x=0, theta_y=math.pi, theta_z=0)
 
 
         # Load camera parameters
@@ -105,7 +107,12 @@ class MyNode(DTROS):
         np_arr = np.fromstring(ros_data.data, np.uint8)
         image_np = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         self.decoded_raw_img = image_np
-        self.undistorted_image = self.undistort(image_np)
+
+    def process_img(self):
+        if self.decoded_raw_img is None:
+            return
+        self.gray_img = cv2.cvtColor(self.decoded_raw_img, cv2.COLOR_BGR2GRAY)
+        self.undistorted_image = self.undistort(self.gray_img)
 
     def publish_img(self, img):
         cmp_img = CompressedImage()
@@ -116,13 +123,35 @@ class MyNode(DTROS):
 
     def run(self):
         while True:
-            rospy.loginfo("Entered loop")
+            # rospy.loginfo("Entered loop")
+            self.process_img()
             if self.undistorted_image is None:
                 continue
             self.publish_img(self.undistorted_image)
             detected_tags = self.detect(self.undistorted_image)
+            if len(detected_tags) < 1:
+                continue
             rospy.loginfo(f'Detected tags: {detected_tags}')
-            rospy.sleep(50)
+            # rospy.loginfo(f'Length of Detected tags: {len(detected_tags)}')
+            # rospy.loginfo(f'Type of Detected Tags: {type(detected_tags)}')
+            # for i in range(0, len(detected_tags)):
+            #     rospy.loginfo(f'i={i}, tag_id?: {detected_tags[i].tag_id}')
+            #     rospy.loginfo(f'i={i}, type of pose_R?: {type(detected_tags[i].pose_R)}')
+            #     rospy.loginfo(f'i={i}, type of pose_T?: {type(detected_tags[i].pose_t)}')
+            #     rospy.loginfo(f'i={i}, type of corners?: {type(detected_tags[i].corners)}')
+            global_pos, global_angle = self.tags.estimate_pose(detected_tags[0].tag_id, detected_tags[0].pose_R, detected_tags[0].pose_t)
+            for i in range(1, len(detected_tags)):
+                temp_pos, temp_angle = self.tags.estimate_pose(detected_tags[i].tag_id, detected_tags[i].pose_R, detected_tags[i].pose_t)
+                global_pos = np.add(global_pos, temp_pos)
+                global_angle += temp_angle
+
+            global_pos /= len(detected_tags)
+            global_angle /= len(detected_tags)
+            rospy.loginfo(f'global pos: {global_pos}')
+            rospy.loginfo(f'global angle: {global_angle}')
+            # rospy.loginfo(f'tag_id?: {detected_tags[1]}')
+            # rospy.loginfo(f'type of pose_R: {type(detected_tags.pose_R)}')
+            # rospy.sleep(50)
 
 
 def main():
