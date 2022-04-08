@@ -15,7 +15,7 @@ dt-launchfile-init
 # launching app
 # dt-exec rosrun lab_4 my_publisher_node.py
 # dt-exec rosrun lab_4 my_subscriber_node.py
-roslaunch lab_4 multiple_nodes.launch veh:=$VEHICLE_NAME
+roslaunch lab_5 multiple_nodes.launch veh:=$VEHICLE_NAME
 
 
 # ----------------------------------------------------------------------------
