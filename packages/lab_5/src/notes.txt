@@ -1,0 +1,22 @@
+Goal: Estimate the robot's position in the global frame with information from a local frame.
+Global Frame: Robot's position with respect to some fixed point in space.
+Local Frame: Robot's position with respect to some particular object.
+
+https://raceon.io/localization/#overview
+
+Scene Setup
+- Measure the position of the tags, in inches from your global origin.
+- Determine the orientation of the tags in reference to your global coordinate system in terms of Euler angles. 
+  Euler angles are a way to describe rotations in 3D and consist of 3 angles; X, Y and Z.
+
+Detector
+- Three important parameters for a Detector object: families, nthreads, quad-decimate
+
+Pose Estimation
+How to get the location of the camera in the global frame?
+1. We get the location of the camera in the tag frame.
+2. Combine (1) with the location of the tag in the global frame (known).
+
+
+What Publishers/Subscribers do I need?
+I need the image subscriber.
