@@ -51,4 +51,4 @@ class Tag():
 
         r = Rotation.from_matrix(np.matmul(self.orientations[tag_id], camera_R))
 
-        return global_pos, r.as_euler('zyz', degrees=True)
+        return global_pos, r.as_euler('xzy', degrees=True)

@@ -129,9 +129,10 @@ class MyNode(DTROS):
                 continue
             self.publish_img(self.undistorted_image)
             detected_tags = self.detect(self.undistorted_image)
+            rospy.loginfo(f'Number of tags detected: {len(detected_tags)}')
             if len(detected_tags) < 1:
                 continue
-            rospy.loginfo(f'Detected tags: {detected_tags}')
+            # rospy.loginfo(f'Detected tags: {detected_tags}')
             # rospy.loginfo(f'Length of Detected tags: {len(detected_tags)}')
             # rospy.loginfo(f'Type of Detected Tags: {type(detected_tags)}')
             # for i in range(0, len(detected_tags)):
